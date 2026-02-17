@@ -5,6 +5,8 @@ if [ "$EUID" -ne 0 ]; then
     exec sudo "$0" "$@"
 fi
 
+MIN_SIZE=$((10 * 1024 * 1024 * 1024))  # 10GB dalam bytes
+
 for dev in $(lsblk -lnpo NAME,TRAN | awk '$2=="usb"{print $1}'); do
 
     for part in $(lsblk -lnpo NAME $dev | tail -n +2); do
@@ -14,29 +16,35 @@ for dev in $(lsblk -lnpo NAME,TRAN | awk '$2=="usb"{print $1}'); do
             continue
         fi
 
+        # Ambil ukuran partisi (bytes)
+        size=$(lsblk -bnpo SIZE "$part")
+
+        # Skip kalau kurang dari 10GB
+        if [ "$size" -lt "$MIN_SIZE" ]; then
+            continue
+        fi
+
+        # Ambil filesystem, skip kalau kosong
+        fstype=$(lsblk -no FSTYPE "$part")
+        if [ -z "$fstype" ]; then
+            continue
+        fi
+
         # Ambil label
         label=$(lsblk -no LABEL "$part")
-
-        # Kalau tidak ada label, pakai nama device
         if [ -z "$label" ]; then
             label=$(basename "$part")
         fi
 
         mount_point="/mnt/$label"
-
         mkdir -p "$mount_point"
 
-        fstype=$(lsblk -no FSTYPE "$part")
-
-        if [ "$fstype" = "ntfs" ]; then
-            mount -t ntfs-3g "$part" "$mount_point" -o uid=1000,gid=1000
-        elif [ "$fstype" = "exfat" ]; then
-            mount -t exfat "$part" "$mount_point" -o uid=1000,gid=1000
+        if mount "$part" "$mount_point"; then
+            echo "Mounted $part ($fstype) to $mount_point"
         else
-            mount "$part" "$mount_point"
+            echo "Failed to mount $part"
+            rmdir "$mount_point"
         fi
-
-        echo "Mounted $part to $mount_point"
 
     done
 done
