@@ -93,7 +93,6 @@ if [ -f "$LOCKFILE" ]; then
 fi
 
 echo "NoSleep aktif selama $MINUTES menit."
-echo "Tetap aktif walau terminal ditutup."
 echo "Gunakan './nosleep.sh stop' untuk menghentikan."
 
 echo "$END_TIME" > "$ENDFILE"
