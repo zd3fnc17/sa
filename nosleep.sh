@@ -48,32 +48,35 @@ echo "NoSleep berjalan selama $MINUTES menit."
 echo "Setelah itu akan kembali ke power default."
 echo "Tekan Ctrl+C untuk menghentikan."
 
-# Jalankan inhibit hanya untuk sleep (supaya WHO bersih)
+# Jalankan inhibit
 systemd-inhibit --what=idle:sleep --why="NoSleep" sleep "$TOTAL_SECONDS" &
 INHIBIT_PID=$!
 
 cleanup() {
     echo
-    echo "NoSleep dihentikan."
-    kill $INHIBIT_PID 2>/dev/null
+    echo "Menghentikan NoSleep..."
+    kill "$INHIBIT_PID" 2>/dev/null
+    wait "$INHIBIT_PID" 2>/dev/null
     date +%s > "$LOCKFILE"
+    echo "Power kembali ke default."
     exit 0
 }
 
-trap cleanup INT
+# Tangkap Ctrl+C dan SIGTERM
+trap cleanup INT TERM
 
 # Countdown realtime
 for ((i=$TOTAL_SECONDS; i>0; i--)); do
-    if ! kill -0 $INHIBIT_PID 2>/dev/null; then
+    if ! kill -0 "$INHIBIT_PID" 2>/dev/null; then
         break
     fi
     MIN=$((i / 60))
     SEC=$((i % 60))
-    printf '\rSisa waktu: %02d menit %02d detik ' $MIN $SEC
+    printf '\rSisa waktu: %02d menit %02d detik ' "$MIN" "$SEC"
     sleep 1
 done
 
-wait $INHIBIT_PID 2>/dev/null
+wait "$INHIBIT_PID" 2>/dev/null
 
 echo
 echo "Waktu selesai."
