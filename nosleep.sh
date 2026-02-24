@@ -52,15 +52,11 @@ echo "Tekan Ctrl+C untuk menghentikan."
 systemd-inhibit --what=idle:sleep --why="NoSleep" sleep "$TOTAL_SECONDS" &
 INHIBIT_PID=$!
 
-cleanup() {
-    echo
-    echo "Menghentikan NoSleep..."
-    kill "$INHIBIT_PID" 2>/dev/null
-    wait "$INHIBIT_PID" 2>/dev/null
-    date +%s > "$LOCKFILE"
-    echo "Power kembali ke default."
-    exit 0
-}
+echo
+echo "Waktu selesai."
+echo "Power kembali ke default."
+date +%s > "$LOCKFILE"
+echo "Cooldown aktif selama $COOLDOWN detik."
 
 # Tangkap Ctrl+C dan SIGTERM
 trap cleanup INT TERM
