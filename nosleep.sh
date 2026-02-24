@@ -1,74 +1,44 @@
 #!/bin/bash
 
-COOLDOWN=120
+COOLDOWN=120   # cooldown dalam detik (120 = 2 menit)
 LOCKFILE="/tmp/nosleep.lock"
 
-show_help() {
-    echo "Usage:"
-    echo "  ./nosleep.sh <menit>"
-    echo ""
-    echo "Contoh:"
-    echo "  ./nosleep.sh 30"
-    echo ""
-    echo "Cooldown: $COOLDOWN detik setelah selesai."
-}
-
-# HELP
-if [[ "$1" == "-h" || "$1" == "--help" ]]; then
-    show_help
-    exit 0
-fi
-
-# VALIDASI INPUT
-if ! [[ "$1" =~ ^[0-9]+$ ]]; then
-    echo "Masukkan durasi dalam menit."
-    exit 1
-fi
-
-MINUTES="$1"
-TOTAL_SECONDS=$((MINUTES * 60))
-
-# CEK COOLDOWN
+# Cek cooldown
 if [ -f "$LOCKFILE" ]; then
-    LAST_END=$(cat "$LOCKFILE")
+    LAST_RUN=$(cat "$LOCKFILE")
     NOW=$(date +%s)
-    DIFF=$((NOW - LAST_END))
+    DIFF=$((NOW - LAST_RUN))
 
     if [ "$DIFF" -lt "$COOLDOWN" ]; then
         REMAIN=$((COOLDOWN - DIFF))
-        MIN=$((REMAIN / 60))
-        SEC=$((REMAIN % 60))
-        echo "Masih cooldown."
-        echo "Sisa waktu: ${MIN} menit ${SEC} detik."
+        echo "Masih cooldown. Tunggu $REMAIN detik lagi."
         exit 1
     fi
 fi
 
-echo "NoSleep berjalan selama $MINUTES menit."
-echo "Setelah itu akan kembali ke power default."
-echo "Tekan Ctrl+C untuk menghentikan."
+read -p "Masukkan durasi (menit): " MINUTES
 
-# Trap Ctrl+C
+if ! [[ "$MINUTES" =~ ^[0-9]+$ ]]; then
+    echo "Input harus angka."
+    exit 1
+fi
+
+SECONDS_TOTAL=$((MINUTES * 60))
+
+echo "Menjalankan nosleep selama $MINUTES menit..."
+date +%s > "$LOCKFILE"
+
+# Trap supaya kalau Ctrl+C tetap bersih
 cleanup() {
-    echo
-    echo "NoSleep dihentikan."
-    date +%s > "$LOCKFILE"
+    echo ""
+    echo "Dihentikan manual."
+    rm -f "$LOCKFILE"
     exit 0
 }
-trap cleanup INT
 
-# Jalankan inhibit + countdown
-systemd-inhibit --what=idle:sleep --why="NoSleep $MINUTES menit" bash -c "
-    for ((i=$TOTAL_SECONDS; i>0; i--)); do
-        MIN=\$((i / 60))
-        SEC=\$((i % 60))
-        printf '\rSisa waktu: %02d menit %02d detik ' \$MIN \$SEC
-        sleep 1
-    done
-"
+trap cleanup SIGINT
 
-echo
-echo "Waktu selesai."
-echo "Power kembali ke default."
-date +%s > "$LOCKFILE"
-echo "Cooldown aktif selama $COOLDOWN detik."
+systemd-inhibit --what=idle:sleep --why="Manual NoSleep" sleep "$SECONDS_TOTAL"
+
+rm -f "$LOCKFILE"
+echo "Selesai."
