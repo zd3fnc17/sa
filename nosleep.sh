@@ -1,21 +1,27 @@
-NoSleep aktif selama 1 menit.
-Tekan Ctrl+C untuk nonaktifkan.
-Waktu selesai.
-Cooldown dimulai selama 120 detik.
-feri@desktop-1:~$ cat nosleep2.sh 
 #!/bin/bash
 
 COOLDOWN=120
 LOCKFILE="/tmp/nosleep.lock"
+PIDFILE="/tmp/nosleep.pid"
+ENDFILE="/tmp/nosleep.end"
 
 show_help() {
+    echo "NoSleep - Cegah auto sleep sementara"
+    echo ""
     echo "Usage:"
-    echo "  ./nosleep.sh <menit>"
+    echo "  ./nosleep.sh <menit>    Jalankan nosleep selama X menit"
+    echo "  ./nosleep.sh stop       Hentikan nosleep yang sedang aktif"
+    echo "  ./nosleep.sh status     Lihat status dan sisa waktu"
+    echo "  ./nosleep.sh -h         Tampilkan bantuan ini"
+    echo ""
+    echo "Keterangan:"
+    echo "  - Selama aktif, sistem tidak akan auto sleep."
+    echo "  - Setelah waktu habis atau dihentikan,"
+    echo "    power kembali ke default."
+    echo "  - Setelah selesai, cooldown berlaku selama $COOLDOWN detik."
     echo ""
     echo "Contoh:"
     echo "  ./nosleep.sh 30"
-    echo ""
-    echo "Cooldown: $COOLDOWN detik setelah selesai."
 }
 
 # HELP
@@ -24,7 +30,52 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
-# VALIDASI INPUT
+# STOP
+if [[ "$1" == "stop" ]]; then
+    if [ -f "$PIDFILE" ]; then
+        PID=$(cat "$PIDFILE")
+        if kill -0 "$PID" 2>/dev/null; then
+            kill -TERM "$PID" 2>/dev/null
+            sleep 1
+            kill -KILL "$PID" 2>/dev/null
+            echo "NoSleep dihentikan."
+        else
+            echo "Proses tidak ditemukan."
+        fi
+        rm -f "$PIDFILE" "$ENDFILE"
+        date +%s > "$LOCKFILE"
+    else
+        echo "NoSleep tidak sedang aktif."
+    fi
+    exit 0
+fi
+
+# STATUS
+if [[ "$1" == "status" ]]; then
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat $PIDFILE)" 2>/dev/null; then
+        if [ -f "$ENDFILE" ]; then
+            END=$(cat "$ENDFILE")
+            NOW=$(date +%s)
+            REMAIN=$((END - NOW))
+
+            if [ "$REMAIN" -gt 0 ]; then
+                MIN=$((REMAIN / 60))
+                SEC=$((REMAIN % 60))
+                echo "NoSleep aktif."
+                echo "Sisa waktu: ${MIN} menit ${SEC} detik."
+            else
+                echo "NoSleep aktif (akan segera selesai)."
+            fi
+        else
+            echo "NoSleep aktif."
+        fi
+    else
+        echo "NoSleep tidak aktif."
+    fi
+    exit 0
+fi
+
+# VALIDASI ANGKA
 if ! [[ "$1" =~ ^[0-9]+$ ]]; then
     echo "Masukkan durasi dalam menit."
     exit 1
@@ -32,11 +83,12 @@ fi
 
 MINUTES="$1"
 TOTAL_SECONDS=$((MINUTES * 60))
+NOW=$(date +%s)
+END_TIME=$((NOW + TOTAL_SECONDS))
 
 # CEK COOLDOWN
 if [ -f "$LOCKFILE" ]; then
     LAST_END=$(cat "$LOCKFILE")
-    NOW=$(date +%s)
     DIFF=$((NOW - LAST_END))
 
     if [ "$DIFF" -lt "$COOLDOWN" ]; then
@@ -49,31 +101,19 @@ if [ -f "$LOCKFILE" ]; then
     fi
 fi
 
-echo "NoSleep berjalan selama $MINUTES menit."
-echo "Setelah itu akan kembali ke power default."
-echo "Tekan Ctrl+C untuk menghentikan."
+echo "NoSleep aktif selama $MINUTES menit."
+echo "Gunakan './nosleep.sh stop' untuk menghentikan."
 
-# Trap Ctrl+C
-cleanup() {
-    echo
-    echo "NoSleep dihentikan."
+echo $END_TIME > "$ENDFILE"
+
+(
+    trap "exit 0" INT TERM
+
+    systemd-inhibit --what=idle:sleep --why="NoSleep $MINUTES menit" sleep "$TOTAL_SECONDS"
+
     date +%s > "$LOCKFILE"
-    exit 0
-}
-trap cleanup INT
+    rm -f "$PIDFILE" "$ENDFILE"
+    echo "NoSleep selesai. Power kembali normal."
+) &
 
-# Jalankan inhibit + countdown
-systemd-inhibit --what=idle:sleep --why="NoSleep $MINUTES menit" bash -c "
-    for ((i=$TOTAL_SECONDS; i>0; i--)); do
-        MIN=\$((i / 60))
-        SEC=\$((i % 60))
-        printf '\rSisa waktu: %02d menit %02d detik ' \$MIN \$SEC
-        sleep 1
-    done
-"
-
-echo
-echo "Waktu selesai."
-echo "Power kembali ke default."
-date +%s > "$LOCKFILE"
-echo "Cooldown aktif selama $COOLDOWN detik."
+echo $! > "$PIDFILE"
